@@ -147,11 +147,6 @@ def analyze_and_visualize_log(log_fname):
     timestamp_start = max(timestamp_start, follow_target_timestamps[timestamp_idx_start_new])
     print('timestamp_start :', timestamp_start, 'end :', timestamp_end)
 
-    # Create timevectors starting from 0 (roughly), in unit of seconds.
-    # Can't subtract with timestamp_start, since it will cause underflow, in case the subtraction results in a negative number.
-    # timestamp_min = min(follow_target_timestamps[0], vehicle_local_pose_timestamps[0]) # This will be our 'base' timestamp, to process all the timestamps.
-    # timestamp_max = max(follow_target_timestamps[-1], vehicle_local_pose_timestamps[-1])
-
     follow_target_timevectors = np.divide(follow_target_timestamps, 1E6)
     vehicle_local_pose_timevectors = np.divide(vehicle_local_pose_timestamps, 1E6)
 
@@ -165,11 +160,7 @@ def analyze_and_visualize_log(log_fname):
     target_position = np.zeros([2, len_time])
     target_velocity  = np.zeros([2, len_time])
 
-    position_setpoint_calculated = np.zeros([2, len_time])
     ft_vel_setpoint = np.zeros([2, len_time])
-
-    raw_follow_position = np.zeros([2, len_time])
-    commanded_follow_position = np.zeros([2, len_time])
 
     follow_angle = np.zeros(len_time)
     target_orientation = np.zeros(len_time)
@@ -191,10 +182,6 @@ def analyze_and_visualize_log(log_fname):
 
     local_pos_setpoint = continuous_to_discrete_interpolate(vehicle_local_pose_setpoint_timestamps / 1E6, vehicle_local_pos_setpoint[:,0:2], time_vector).reshape([2, len_time])
     local_vel_setpoint = continuous_to_discrete_interpolate(vehicle_local_pose_setpoint_timestamps / 1E6, vehicle_local_vel_setpoint[:,0:2], time_vector).reshape([2, len_time])
-
-    # orbit angle projection
-    position_setpoint_calculated[:, :] = target_position[:, :] + \
-        follow_distance * np.array([np.cos(orbit_angle[:]), np.sin(orbit_angle[:])])
 
     real_position = continuous_to_discrete_interpolate(vehicle_local_pose_timevectors, vehicle_local_pos[:,0:2], time_vector).reshape([2, len_time])
 
@@ -222,6 +209,15 @@ def analyze_and_visualize_log(log_fname):
     plot_tails = False  # XXX: these don't work as expected fully ATM
     len_tail_s = 10.  # [s]
     len_tail_k = int(len_tail_s / time_step)
+
+    # Calculate XY max / min range. Ignore any 'nan' with nan-max/min function,
+    # which can be included in vehicle_local_position_setpoint or trajectory_setpoint messages!
+    xaxis_max = np.nanmax([np.nanmax(target_position[1, :]), np.nanmax(real_position[1, :]), np.nanmax(local_pos_setpoint[1, :])])
+    xaxis_min = np.nanmin([np.nanmin(target_position[1, :]), np.nanmin(real_position[1, :]), np.nanmin(local_pos_setpoint[1, :])])
+    yaxis_max = np.nanmax([np.nanmax(target_position[0, :]), np.nanmax(real_position[0, :]), np.nanmax(local_pos_setpoint[0, :])])
+    yaxis_min = np.nanmin([np.nanmin(target_position[0, :]), np.nanmin(real_position[0, :]), np.nanmin(local_pos_setpoint[0, :])])
+
+    print('xaxis min max :', xaxis_min, xaxis_max, 'yaxis min max :', yaxis_min, yaxis_max)
 
     # make the figure (it is just a dict!)
     fig_dict = {
@@ -290,13 +286,6 @@ def analyze_and_visualize_log(log_fname):
         'y': 0,
         'steps': []
     }   
-
-    xaxis_max = np.max([np.max(target_position[1, :]), np.max(raw_follow_position[1, :]), np.max(position_setpoint_calculated[1, :])])
-    xaxis_min = np.min([np.min(target_position[1, :]), np.min(raw_follow_position[1, :]), np.min(position_setpoint_calculated[1, :])])
-    yaxis_max = np.max([np.max(target_position[0, :]), np.max(raw_follow_position[0, :]), np.max(position_setpoint_calculated[0, :])])
-    yaxis_min = np.min([np.min(target_position[0, :]), np.min(raw_follow_position[0, :]), np.min(position_setpoint_calculated[0, :])])
-
-    print('xaxis min max :', xaxis_min, xaxis_max, 'yaxis min max :', yaxis_min, yaxis_max)
 
     # make frames
     for k in range(0, len_time, k_interval):
