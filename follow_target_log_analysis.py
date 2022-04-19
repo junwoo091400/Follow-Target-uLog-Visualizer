@@ -36,7 +36,6 @@ def get_follow_target_status_pose_angle_data(msg_data_dict):
     return (pos_concatenated, vel_concatenated, tracked_target_orientations, orbit_angles)
 
 
-
 def get_xyz_vxyz_data(msg_data_dict):
     # Get the data length for this log
     data_len = len(msg_data_dict['timestamp'])
@@ -56,6 +55,18 @@ def get_xyz_vxyz_data(msg_data_dict):
 
     return (pos_concatenated, vel_concatenated)
 
+def get_acc_xyz_data(msg_data_dict):
+    # Get the data length for this log
+    data_len = len(msg_data_dict['timestamp'])
+    print('Data Length :', data_len)
+
+    acc_0 = msg_data_dict['acceleration[0]'].reshape([data_len, 1])
+    acc_1 = msg_data_dict['acceleration[1]'].reshape([data_len, 1])
+    acc_2 = msg_data_dict['acceleration[2]'].reshape([data_len, 1])
+
+    acc_concatenated = np.concatenate((acc_0, acc_1, acc_2), axis = 1)
+
+    return acc_concatenated
 
 
 # https://docs.scipy.org/doc/scipy/tutorial/interpolate.html
@@ -99,15 +110,16 @@ def analyze_and_visualize_log(log_fname):
     vehicle_local_pos = np.ndarray((MESSAGES_LEN, 3))
     vehicle_local_vel = np.ndarray((MESSAGES_LEN, 3))
 
-    # Velocity setpoint visualization (Commanded by Follow Target Flight Task)
+    # Velocity setpoint visualization (Commanded by MPC Position controller)
     vehicle_local_pose_setpoint_timestamps = np.ndarray((MESSAGES_LEN, 1))
     vehicle_local_pos_setpoint = np.ndarray((MESSAGES_LEN, 3))
     vehicle_local_vel_setpoint = np.ndarray((MESSAGES_LEN, 3))
 
-    # Trajectory setpiont visualization (Commanded by MPC Position controller)
+    # Trajectory setpoint visualization (Commanded by Follow Target Flight Task)
     trajectory_setpoint_timestamps = np.ndarray((MESSAGES_LEN, 1))
     trajectory_setpoint_pos = np.ndarray((MESSAGES_LEN, 3))
     trajectory_setpoint_vel = np.ndarray((MESSAGES_LEN, 3))
+    trajectory_setpoint_acc = np.ndarray((MESSAGES_LEN, 3))
 
     # Go through the all the different messages and pick the one we want
     for data in data_list:
@@ -125,6 +137,7 @@ def analyze_and_visualize_log(log_fname):
         elif msg_name == 'trajectory_setpoint': # From Follow target Flight Task
             trajectory_setpoint_timestamps = msg_data['timestamp']
             trajectory_setpoint_pos, trajectory_setpoint_vel = get_xyz_vxyz_data(msg_data)
+            trajectory_setpoint_acc = get_acc_xyz_data(msg_data)
 
 
     # End of data processing
@@ -155,6 +168,12 @@ def analyze_and_visualize_log(log_fname):
     time_vector = np.arange((timestamp_start)/1E6, (timestamp_end)/1E6, time_step)
     len_time = len(time_vector)
 
+    ##########################
+    # Print Parameter Changes
+    for param_change in ulog.changed_parameters:
+        timestamp, param_name, param_value = param_change
+        print('Parameter change at', timestamp / 1E6, 'sec,', param_name, 'to', param_value)
+
     ###############
     # GRAPH Variables
     target_position = np.zeros([2, len_time])
@@ -179,6 +198,7 @@ def analyze_and_visualize_log(log_fname):
 
     ft_pos_setpoint = continuous_to_discrete_interpolate(trajectory_setpoint_timestamps / 1E6, trajectory_setpoint_pos[:,0:2], time_vector).reshape([2, len_time])
     ft_vel_setpoint = continuous_to_discrete_interpolate(trajectory_setpoint_timestamps / 1E6, trajectory_setpoint_vel[:,0:2], time_vector).reshape([2, len_time])
+    ft_acc_setpoint = continuous_to_discrete_interpolate(trajectory_setpoint_timestamps / 1E6, trajectory_setpoint_acc[:,0:2], time_vector).reshape([2, len_time])
 
     local_pos_setpoint = continuous_to_discrete_interpolate(vehicle_local_pose_setpoint_timestamps / 1E6, vehicle_local_pos_setpoint[:,0:2], time_vector).reshape([2, len_time])
     local_vel_setpoint = continuous_to_discrete_interpolate(vehicle_local_pose_setpoint_timestamps / 1E6, vehicle_local_vel_setpoint[:,0:2], time_vector).reshape([2, len_time])
@@ -380,6 +400,19 @@ def analyze_and_visualize_log(log_fname):
                 name = 'Velocity setpoint by Follow Target',
                 line = dict({
                     'color': 'rgb(0, 0, 255)',
+                    'dash': 'dashdot'
+                })
+            )
+        )
+
+        # Acceleration setpoint
+        frame['data'].append(
+            go.Scatter(
+                x = np.array([0., ft_acc_setpoint[1, k]]) + ft_pos_setpoint[1, k],
+                y = np.array([0., ft_acc_setpoint[0, k]]) + ft_pos_setpoint[0, k],
+                name = 'Acceleration setpoint by Follow Target',
+                line = dict({
+                    'color': 'rgb(0, 128, 255)',
                     'dash': 'dashdot'
                 })
             )
